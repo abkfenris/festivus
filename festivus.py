@@ -8,28 +8,34 @@ import redis
 
 class Festivus(Operations):
     """ An open source version of Festivus, Descartes Labs Google Cloud Storage backed
-    FUSE implementation that uses REDIS to cache metadata """
-
-    def __init__(self, bucket_name, service_account=None, base_key='/', redis_url='redis://localhost:6379/0', init=False):
-        """
-        properties:
-            bucket_name (required str):
-            service_account (path): 
-            base_key (str):
-            redis_uri (str):
+    FUSE implementation that uses REDIS to cache metadata.
+    
+    Arguments:
+            bucket_name (required str): Bucket name on Google Cloud Storage
+            service_account (path): Path to Google Cloud Service Account JSON file to use for connection
+            redis_url (str): URI for Redis host and database.
+            base_key (str): Use a base key if several Festivus instances are sharing the same Redis Database. You probably shouldn't do that though.
             init (bool): Set init to True to build the initial Redis metadata cache. 
+        """
+
+    def __init__(self, bucket_name, service_account=None, redis_url='redis://localhost:6379/0', base_key='/', init=False):
+        """
+        
         """
         if service_account:
             self.client = storage.Client.from_service_account_json(service_account)
         else:
             self.client = storage.Client()
-        self.bucket = self.client.get_bucket(bucket_name)
+        self.bucket_name = bucket_name.split('gs://')[-1]
+        self.bucket = self.client.get_bucket(self.bucket_name)
         self.redis = redis.StrictRedis.from_url(redis_url)
         self.base_key = base_key
         #self.st_mode = set based on permissions to write to the bucket
 
         if init:
             for blob in self.bucket.list_blobs():
+                # One pipeline for blob. Might be more efficient to enumerate blobs and only make a new
+                # pipeline every X number of blobs.
                 pipe = self.redis.pipeline()
 
                 # build our path structure for fast file listing
@@ -39,7 +45,6 @@ class Festivus(Operations):
 
                 for part in parts:
                     pipe.sadd(base, part)
-
                     base += part
                 
                 pipe.sadd(base, name)
@@ -100,6 +105,7 @@ class Festivus(Operations):
         raise NotImplementedError
     
     # File methods
+    # will use Blob.upload_from_string and Blob.download_from_string
 
     def open(self, path, flags):
         raise NotImplementedError
